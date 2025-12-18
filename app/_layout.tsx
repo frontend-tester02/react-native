@@ -1,27 +1,32 @@
-/* eslint-disable no-unused-expressions */
-import { Redirect, Stack, useRouter } from 'expo-router'
+import { AuthProvider, useAuth } from '@/lib/auth-context'
+import { Stack, useRouter, useSegments } from 'expo-router'
 import { useEffect } from 'react'
 
 function RouteGuard({ children }: { children: React.ReactNode }) {
 	const router = useRouter()
-
-	const isAuth = false
+	const { user, isLoadingUser } = useAuth()
+	const segment = useSegments()
 
 	useEffect(() => {
-		if (!isAuth) {
-			;<Redirect href={'/auth'} />
+		const inAuthGroup = segment[0] === 'auth'
+		if (!user && !inAuthGroup && !isLoadingUser) {
+			router.replace('/auth')
+		} else if (user && inAuthGroup && !isLoadingUser) {
+			router.replace('/')
 		}
-	})
+	}, [router, segment, user, isLoadingUser])
 
 	return <>{children}</>
 }
 
 export default function RootLayout() {
 	return (
-		<RouteGuard>
-			<Stack>
-				<Stack.Screen name='(tabs)' options={{ headerShown: false }} />
-			</Stack>
-		</RouteGuard>
+		<AuthProvider>
+			<RouteGuard>
+				<Stack>
+					<Stack.Screen name='(tabs)' options={{ headerShown: false }} />
+				</Stack>
+			</RouteGuard>
+		</AuthProvider>
 	)
 }
