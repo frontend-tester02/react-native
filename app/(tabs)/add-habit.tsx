@@ -1,6 +1,16 @@
+import { DATABASE_ID, databases, HABITS_COLLECTION_ID } from '@/lib/appwrite'
+import { useAuth } from '@/lib/auth-context'
+import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { StyleSheet, View } from 'react-native'
-import { Button, SegmentedButtons, TextInput } from 'react-native-paper'
+import { ID } from 'react-native-appwrite'
+import {
+	Button,
+	SegmentedButtons,
+	Text,
+	TextInput,
+	useTheme,
+} from 'react-native-paper'
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly']
 type Frequency = (typeof FREQUENCIES)[number]
@@ -9,8 +19,40 @@ export default function AddHabitScreen() {
 	const [title, setTitle] = useState<string>('')
 	const [description, setDescription] = useState<string>('')
 	const [frequency, setFrequency] = useState<Frequency>('daily')
+	const [error, setError] = useState<string>('')
 
-	const handleSubmit = async () => {}
+	const { user } = useAuth()
+	const router = useRouter()
+	const theme = useTheme()
+
+	const handleSubmit = async () => {
+		if (!user) return
+
+		try {
+			await databases.createDocument(
+				DATABASE_ID,
+				HABITS_COLLECTION_ID,
+				ID.unique(),
+				{
+					user_id: user.$id,
+					title,
+					description,
+					frequency,
+					streak_count: 0,
+					$updatedAt: user.$updatedAt,
+					$createdAt: user.$createdAt,
+				}
+			)
+			router.back()
+		} catch (error) {
+			if (error instanceof Error) {
+				setError(error.message)
+				return
+			}
+
+			setError('There was an error creating the habit')
+		}
+	}
 	return (
 		<View style={styles.container}>
 			<TextInput
@@ -43,6 +85,8 @@ export default function AddHabitScreen() {
 			>
 				Add Habit
 			</Button>
+
+			{error && <Text style={{ color: theme.colors.error }}> {error}</Text>}
 		</View>
 	)
 }
