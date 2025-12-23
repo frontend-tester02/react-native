@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import {
 	client,
 	COMPLETION_COLLECTION_ID,
@@ -7,7 +8,7 @@ import {
 	RealtimeResponse,
 } from '@/lib/appwrite'
 import { useAuth } from '@/lib/auth-context'
-import { Habit } from '@/types'
+import { Habit, HabitCompletion } from '@/types'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { useEffect, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
@@ -18,10 +19,10 @@ import { Button, Surface, Text } from 'react-native-paper'
 export default function Index() {
 	const { signOut, user } = useAuth()
 	const [habits, setHabits] = useState<Habit[]>()
+	const [completedHabits, setCompletedHabits] = useState<string[]>()
 
 	const swipeableRefs = useRef<{ [key: string]: Swipeable | null }>({})
 
-	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const fetchHabits = async () => {
 		try {
 			const response = await databases.listDocuments(
@@ -30,6 +31,27 @@ export default function Index() {
 				[Query.equal('user_id', user?.$id ?? '')]
 			)
 			setHabits(response.documents as unknown as Habit[])
+		} catch (error) {
+			console.error(error)
+		}
+	}
+
+	const fetchTodayCompletions = async () => {
+		try {
+			const today = new Date()
+			today.setHours(0, 0, 0, 0)
+
+			const response = await databases.listDocuments(
+				DATABASE_ID,
+				COMPLETION_COLLECTION_ID,
+				[
+					Query.equal('user_id', user?.$id ?? ''),
+					Query.greaterThanEqual('completed_at', today.toISOString()),
+				]
+			)
+
+			const completions = response.documents as unknown as HabitCompletion[]
+			setCompletedHabits(completions.map(c => c.habit_id))
 		} catch (error) {
 			console.error(error)
 		}
@@ -64,12 +86,12 @@ export default function Index() {
 			)
 
 			fetchHabits()
-
+			fetchTodayCompletions()
 			return () => {
 				habitSubscription()
 			}
 		}
-	}, [fetchHabits, user])
+	}, [user, fetchHabits, fetchTodayCompletions])
 
 	const handleDeleteHabit = async (id: string) => {
 		try {
@@ -80,8 +102,25 @@ export default function Index() {
 	}
 
 	const handleCompleteHabit = async (id: string) => {
-		if (!user) return
+		if (!user || completedHabits?.includes(id)) return
 		try {
+			// Extra safety: ensure there is no completion for this habit today in the database
+			const today = new Date()
+			today.setHours(0, 0, 0, 0)
+
+			const existingCompletions = await databases.listDocuments(
+				DATABASE_ID,
+				COMPLETION_COLLECTION_ID,
+				[
+					Query.equal('user_id', user.$id),
+					Query.equal('habit_id', id),
+					Query.greaterThanEqual('completed_at', today.toISOString()),
+				]
+			)
+
+			if (existingCompletions.total > 0) {
+				return
+			}
 			await databases.createDocument(
 				DATABASE_ID,
 				COMPLETION_COLLECTION_ID,
@@ -93,6 +132,11 @@ export default function Index() {
 				}
 			)
 
+			// Mark this habit as completed locally so it cannot be completed again today
+			setCompletedHabits(prev =>
+				prev ? (prev.includes(id) ? prev : [...prev, id]) : [id]
+			)
+
 			const habit = habits?.find(h => h.$id === id)
 			if (!habit) return
 
@@ -100,6 +144,17 @@ export default function Index() {
 				streak_count: habit.streak_count + 1,
 				$updatedAt: habit.$updatedAt,
 			})
+
+			// Optimistically update local habits so streak count changes immediately
+			setHabits(prev =>
+				prev
+					? prev.map(h =>
+							h.$id === id
+								? { ...h, streak_count: h.streak_count + 1 }
+								: h
+					  )
+					: prev
+			)
 		} catch (error) {
 			console.error(error)
 		}

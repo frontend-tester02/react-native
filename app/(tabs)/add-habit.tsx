@@ -20,15 +20,21 @@ export default function AddHabitScreen() {
 	const [description, setDescription] = useState<string>('')
 	const [frequency, setFrequency] = useState<Frequency>('daily')
 	const [error, setError] = useState<string>('')
+	const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
 
 	const { user } = useAuth()
 	const router = useRouter()
 	const theme = useTheme()
 
 	const handleSubmit = async () => {
-		if (!user) return
+		if (!user || isSubmitting) return
 
 		try {
+			setIsSubmitting(true)
+
+			// Optimistic UX: navigate immediately; perform the network request in the background.
+			router.replace('/(tabs)')
+
 			await databases.createDocument(
 				DATABASE_ID,
 				HABITS_COLLECTION_ID,
@@ -39,18 +45,22 @@ export default function AddHabitScreen() {
 					description,
 					frequency,
 					streak_count: 0,
-					$updatedAt: user.$updatedAt,
-					$createdAt: user.$createdAt,
 				}
 			)
-			router.back()
+
+			setTitle('')
+			setDescription('')
+			setFrequency('daily')
+			setError('')
 		} catch (error) {
 			if (error instanceof Error) {
 				setError(error.message)
+				setIsSubmitting(false)
 				return
 			}
 
 			setError('There was an error creating the habit')
+			setIsSubmitting(false)
 		}
 	}
 	return (
@@ -81,7 +91,8 @@ export default function AddHabitScreen() {
 			<Button
 				mode='contained'
 				onPress={handleSubmit}
-				disabled={!title || !description}
+				disabled={!title || !description || isSubmitting}
+				loading={isSubmitting}
 			>
 				Add Habit
 			</Button>
